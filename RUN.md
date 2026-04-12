@@ -5,8 +5,10 @@ A CLI packet capture tool built with `pcap` and `clap`.
 ## Prerequisites
 
 - Rust/Cargo installed
-- `libpcap-dev` (Ubuntu: `sudo apt install libpcap-dev`)
-- `sudo` privileges for packet capture
+- Linux: `sudo apt install libpcap-dev`
+- macOS: preinstalled
+- Windows: install Npcap from https://npcap.com
+- Root/admin privileges required for packet capture
 
 ## Running
 
@@ -21,8 +23,16 @@ List available interfaces:
 sudo cargo run -- --list
 ```
 
-Capture packets:
+Capture 10 packets (use `lo0` on macOS, `lo` on Linux):
 
 ```bash
-sudo cargo run -- -i lo -c 10
+sudo cargo run -- -i lo0 -c 10
 ```
+
+In a separate terminal, generate test traffic:
+
+```bash
+ping -c 5 127.0.0.1
+```
+
+On Windows, run the terminal as Administrator instead of using `sudo`, and use `cargo run -- --list` to find your desired interface name.
