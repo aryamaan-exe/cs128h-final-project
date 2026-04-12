@@ -1,0 +1,6 @@
+# Build artifacts
+target/
+
+# IDE/OS specifics
+.DS_Store
+.vscode/
