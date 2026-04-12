@@ -4,22 +4,20 @@
 
 ## Project Introduction
 
-The following project will implement a simplified version of Surfshark's VPN service. This is a simplified CLI tool in Rust that allows the user to use  through the OpenVPN protocol. We have chosen to work on this project primarily for pedagogical reasons to learn the basics of computer networking.
+The following project will implement a simplified version of Wireshark's packaging service. This is a simplified CLI tool that allows the user to track traffic through a computer network. We have chosen to work on this project primarily for pedagogical reasons to learn the basics of computer networking.
 
 ### Goals and Objectives
 
-* Create something that makes a simplified encrypted calls via the OpenVPN protocol.
+* Create something that tracks packages between computer networks.
 
 ## Technical Overview
 
 Overall the project will need to be able to:
-* Create a secure tunnel to the OpenVPN server
-* Encrypt outgoing signals
-* Decrypt incoming signals
+* Track packages between IPs.
 
 ### Checkpoint 1
 
-* The project should be able to use the OpenVPN daemon.
+* The project shoudl be able to track packages sent between ip address servers.
 
 ### Checkpoint 2
 
