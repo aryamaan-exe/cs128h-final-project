@@ -1,4 +1,4 @@
-# cs128h-final-project — Simplified Surfshark
+# cs128h-final-project — Simplified Wireshark
 
 **Team Members:** Ari, Aidan, Sabona
 
