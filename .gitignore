@@ -4,3 +4,6 @@ target/
 # IDE/OS specifics
 .DS_Store
 .vscode/
+
+# Claude Code
+CLAUDE.md
