@@ -1,5 +1,7 @@
 use clap::Parser;
 use pcap::Device;
+use chrono::{TimeZone, Local};
+
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -68,7 +70,10 @@ fn main() {
         match capture1.next_packet() {
             Ok(packet) => {
                 packets_received += 1;
-                println!("\nReceived packet {} out of {}. \n{:?}", packets_received, cli_arguments.count, packet);
+                println!("\nReceived packet {} out of {}.", packets_received, cli_arguments.count);
+                let tv = packet.header.ts;
+                let dt = Local.timestamp_opt(tv.tv_sec, (tv.tv_usec as u32) * 1000).unwrap();
+                println!("At {} ({} out of {} bytes captured)", dt.format("%Y-%m-%d %H:%M:%S%.3f"), packet.header.caplen, packet.header.len);
             }
             Err(e) => {
                 if e != pcap::Error::TimeoutExpired {
