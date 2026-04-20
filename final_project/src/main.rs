@@ -1,3 +1,5 @@
+mod capture;
+
 use clap::Parser;
 use pcap::Device;
 
@@ -44,38 +46,6 @@ fn main() {
     }
 
     // [STARTING PACKET CAPTURE]
-    let dev = match cli_arguments.interface {
-            Some(val) => val,
-            None => {
-                panic!("There was an issue with finding the specified interface");
-            }
-        };
-    let inactive_capture = match pcap::Capture::from_device(dev.as_str()) {
-        Ok(val) => val,
-        Err(e) => {
-            panic!("There was an issue with finding the specified interface: {}", e);
-        }
-    };
-    let mut capture1 = match inactive_capture.promisc(true).snaplen(65535).timeout(100).open() {
-        Ok(val) => val,
-        Err(e) => {
-            panic!("Failed to open capture handle: {}", e);
-        }
-    };
-    println!("Capture handle opened, starting capture on {}...", dev);
-    let mut packets_received = 0;
-    while packets_received < cli_arguments.count {
-        match capture1.next_packet() {
-            Ok(packet) => {
-                packets_received += 1;
-                println!("\nReceived packet {} out of {}. \n{:?}", packets_received, cli_arguments.count, packet);
-            }
-            Err(e) => {
-                if e != pcap::Error::TimeoutExpired {
-                println!("The following error occurred while attempting to retrieve the next packet: {}", e);
-                }
-            }
-        }
-    }
+    capture::start_capture(cli_arguments.interface, cli_arguments.count);
 
 }
