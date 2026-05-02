@@ -87,7 +87,7 @@ fn main() {
         }
     };
 
-    // ✅ APPLY FILTER (you defined it—now we use it)
+    // APPLY FILTER (you defined it—now we use it)
     if let Some(f) = &cli_arguments.filter {
         if let Err(e) = capture1.filter(f, true) {
             eprintln!("Failed to apply filter '{}': {}", f, e);
@@ -105,7 +105,7 @@ fn main() {
             Ok(packet) => {
                 packets_received += 1;
 
-                // ✅ CLEAN WIRESHARK-STYLE OUTPUT
+                // CLEAN WIRESHARK-STYLE OUTPUT
                 if let Some(eth) = EthernetPacket::new(packet.data) {
                     match eth.get_ethertype() {
                         EtherTypes::Ipv4 => {
