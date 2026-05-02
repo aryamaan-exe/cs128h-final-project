@@ -87,7 +87,6 @@ fn main() {
         }
     };
 
-    // APPLY FILTER (you defined it—now we use it)
     if let Some(f) = &cli_arguments.filter {
         if let Err(e) = capture1.filter(f, true) {
             eprintln!("Failed to apply filter '{}': {}", f, e);
