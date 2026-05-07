@@ -30,8 +30,8 @@ Overall the project will need to be able to:
 
 ## References
 
-* https://tokio.rs/
-* https://docs.rs/tun/latest/tun/
+* https://docs.rs/pcap/latest/pcap/
+* https://docs.rs/pnet/latest/pnet/
 * https://github.com/cloudflare/boringtun
 * Computer Networking, a Top Down Approach (Kurose, Ross) isbn: 9780133594140
 * TCP/IP Illustrated (ISBN 9780201633467)
