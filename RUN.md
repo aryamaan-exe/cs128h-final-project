@@ -1,6 +1,6 @@
 # Simplified Wireshark
 
-A CLI packet capture tool built with `pcap` and `clap`.
+A live packet capture dashboard built with `pcap`, `clap`, and `ratatui`.
 
 ## Prerequisites
 
@@ -23,16 +23,44 @@ List available interfaces:
 sudo cargo run -- --list
 ```
 
-Capture 10 packets (use `lo0` on macOS, `lo` on Linux):
+Launch the dashboard (use `lo0` on macOS, `lo` on Linux):
 
 ```bash
-sudo cargo run -- -i lo0 -c 10
+sudo cargo run -- -i lo0
 ```
 
-In a separate terminal, generate test traffic:
+The dashboard updates live and shows:
+- Total packets received
+- Protocol breakdown (TCP / UDP / ARP / Other)
+- Top senders by packet count
+
+Press **q** to quit.
+
+### Optional flags
+
+| Flag | Short | Description | Default |
+|---|---|---|---|
+| `--interface` | `-i` | Network interface to capture on | (required) |
+| `--count` | `-c` | Stop after N packets | 10,000,000 |
+| `--filter` | `-f` | BPF filter expression | (none) |
+
+### Filter examples
+
+```bash
+# Only TCP traffic
+sudo cargo run -- -i en0 -f "tcp"
+
+# Only traffic to/from a specific host
+sudo cargo run -- -i en0 -f "host 8.8.8.8"
+
+# Only traffic on port 443 (HTTPS)
+sudo cargo run -- -i en0 -f "tcp port 443"
+```
+
+### Generate test traffic (in a separate terminal)
 
 ```bash
 ping -c 5 127.0.0.1
 ```
 
-On Windows, run the terminal as Administrator instead of using `sudo`, and use `cargo run -- --list` to find your desired interface name.
+On Windows, run the terminal as Administrator instead of using `sudo`, and use `cargo run -- --list` to find your interface name.

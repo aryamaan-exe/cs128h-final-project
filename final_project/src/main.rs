@@ -1,17 +1,21 @@
 mod capture;
+mod dashboard;
+mod stats;
+
+use std::sync::{Arc, Mutex};
 
 use clap::Parser;
 use pcap::Device;
+use stats::Stats;
 
 #[derive(Parser, Debug)]
 struct Args {
-    // network interface to capture on: ethernet, wifi card, etc.
     #[arg(short, long)]
     interface: Option<String>,
-    // number of packets to capture
-    #[arg(short, long, default_value_t = 100)]
+
+    #[arg(short, long, default_value_t = 10_000_000)]
     count: usize,
-    // used to print available interfaces
+
     #[arg(long)]
     list: bool,
 
@@ -20,38 +24,39 @@ struct Args {
 }
 
 fn main() {
-    // [PARSING CLI ARGS]
-    let cli_arguments: Args = Args::parse();
+    let args: Args = Args::parse();
 
-    if cli_arguments.list {
-        let device_interface_list = match Device::list() {
-            Ok(vector) => vector,
-            Err(e) => {
-                println!(
-                    "The following error was arose trying to generate a custom device interface list: \n{}",
-                    e
-                );
-                return;
+    if args.list {
+        match Device::list() {
+            Ok(devices) => {
+                for d in &devices {
+                    println!("{}", d.name);
+                }
             }
-        };
-        println!("List of custom device interfaces: ");
-        for device_interface in &device_interface_list {
-            println!("{}", device_interface.name);
+            Err(e) => println!("Error listing devices: {}", e),
         }
-        println!(
-            "Use one of the interfaces above with the --interface flag to capture packets on that interface."
-        );
         return;
-    } else {
-        match &cli_arguments.interface {
-            Some(val) => println!("Interface: {}", val),
-            None => {
-                println!("No flags utilized, please reference RUN.md for specifications");
-                return;
-            }
-        }
     }
 
-    // [STARTING PACKET CAPTURE]
-    capture::start_capture(cli_arguments.interface, cli_arguments.count, cli_arguments.filter);
+    if args.interface.is_none() {
+        println!("Specify an interface with --interface. Use --list to see options.");
+        return;
+    }
+
+    let stats = Arc::new(Mutex::new(Stats::new()));
+
+    let stats_for_capture = Arc::clone(&stats);
+
+    std::thread::spawn(move || {
+        capture::start_capture(
+            args.interface,
+            args.count,
+            args.filter,
+            stats_for_capture,
+        );
+    });
+
+    if let Err(e) = dashboard::run_dashboard(stats) {
+        eprintln!("Dashboard error: {}", e);
+    }
 }

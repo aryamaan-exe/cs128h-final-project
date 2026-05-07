@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use pcap;
 use pnet_packet::Packet;
 use pnet_packet::ethernet::{EtherTypes, EthernetPacket};
@@ -6,108 +8,96 @@ use pnet_packet::ipv4::Ipv4Packet;
 use pnet_packet::tcp::TcpPacket;
 use pnet_packet::udp::UdpPacket;
 
-pub fn start_capture(interface: Option<String>, count: usize, filter: Option<String>) {
+use crate::stats::Stats;
+
+// Instead of printing each packet, we now receive a reference to the shared
+// Stats object and silently update it. The dashboard thread reads Stats
+// independently on its own timer.
+pub fn start_capture(
+    interface: Option<String>,
+    count: usize,
+    filter: Option<String>,
+    stats: Arc<Mutex<Stats>>, // Arc = shared ownership across threads, Mutex = safe mutation
+) {
     let dev = match interface {
         Some(val) => val,
-        None => {
-            panic!("There was an issue with finding the specified interface");
-        }
+        None => panic!("No interface specified"),
     };
 
     let inactive_capture = match pcap::Capture::from_device(dev.as_str()) {
         Ok(val) => val,
-        Err(e) => {
-            panic!("There was an issue with finding the specified interface: {}", e);
-        }
+        Err(e) => panic!("Failed to open device: {}", e),
     };
 
-    let mut capture1 = match inactive_capture
-        .promisc(true)
-        .snaplen(65535)
-        .timeout(100)
+    let mut cap = match inactive_capture
+        .promisc(true)   // promiscuous mode: capture all packets, not just ours
+        .snaplen(65535)  // max bytes to capture per packet
+        .timeout(100)    // return from next_packet() after 100ms even if no packet arrived
         .open()
     {
         Ok(val) => val,
-        Err(e) => {
-            panic!("Failed to open capture handle: {}", e);
-        }
+        Err(e) => panic!("Failed to open capture handle: {}", e),
     };
 
     if let Some(f) = &filter {
-        if let Err(e) = capture1.filter(f, true) {
+        if let Err(e) = cap.filter(f, true) {
             eprintln!("Failed to apply filter '{}': {}", f, e);
             return;
         }
-        println!("Filter applied: {}", f);
     }
 
-    println!("Capture handle opened, starting capture on {}...", dev);
+    let mut received = 0;
 
-    let mut packets_received = 0;
-
-    while packets_received < count {
-        match capture1.next_packet() {
+    while received < count {
+        match cap.next_packet() {
             Ok(packet) => {
-                packets_received += 1;
+                received += 1;
 
+                // Lock the mutex so we can safely write to Stats.
+                // The lock is released automatically when `s` goes out of
+                // scope at the end of this block — no manual unlock needed.
+                let mut s = stats.lock().unwrap();
+                s.total += 1;
+
+                // Parse the Ethernet frame to get IP/protocol info
                 if let Some(eth) = EthernetPacket::new(packet.data) {
                     match eth.get_ethertype() {
                         EtherTypes::Ipv4 => {
                             if let Some(ip) = Ipv4Packet::new(eth.payload()) {
+                                // Record this source IP in the senders map.
+                                // entry().or_insert(0) gives us the counter for this
+                                // IP, creating it at 0 if it didn't exist yet.
+                                let src = ip.get_source().to_string();
+                                *s.senders.entry(src).or_insert(0) += 1;
+
                                 match ip.get_next_level_protocol() {
                                     IpNextHeaderProtocols::Tcp => {
-                                        if let Some(tcp) = TcpPacket::new(ip.payload()) {
-                                            println!(
-                                                "[{}] TCP {}:{} -> {}:{}",
-                                                packets_received,
-                                                ip.get_source(),
-                                                tcp.get_source(),
-                                                ip.get_destination(),
-                                                tcp.get_destination()
-                                            );
-                                        }
+                                        let _ = TcpPacket::new(ip.payload()); // validate
+                                        s.tcp += 1;
                                     }
                                     IpNextHeaderProtocols::Udp => {
-                                        if let Some(udp) = UdpPacket::new(ip.payload()) {
-                                            println!(
-                                                "[{}] UDP {}:{} -> {}:{}",
-                                                packets_received,
-                                                ip.get_source(),
-                                                udp.get_source(),
-                                                ip.get_destination(),
-                                                udp.get_destination()
-                                            );
-                                        }
+                                        let _ = UdpPacket::new(ip.payload()); // validate
+                                        s.udp += 1;
                                     }
-                                    _ => {
-                                        println!(
-                                            "[{}] IPv4 {} -> {} (Other)",
-                                            packets_received,
-                                            ip.get_source(),
-                                            ip.get_destination()
-                                        );
-                                    }
+                                    _ => s.other += 1,
                                 }
                             }
                         }
-
-                        EtherTypes::Arp => {
-                            println!("[{}] ARP packet", packets_received);
-                        }
-
-                        _ => {
-                            println!("[{}] Other Ethernet frame", packets_received);
-                        }
+                        EtherTypes::Arp => s.arp += 1,
+                        _ => s.other += 1,
                     }
                 }
+                // `s` is dropped here → Mutex lock is released
             }
 
             Err(e) => {
+                // TimeoutExpired just means no packet arrived in 100ms — that's normal.
+                // Any other error is a real problem, but we can't print to stdout
+                // while the TUI is running (it would corrupt the display), so we
+                // silently ignore it here.
                 if e != pcap::Error::TimeoutExpired {
-                    println!(
-                        "The following error occurred while attempting to retrieve the next packet: {}",
-                        e
-                    );
+                    let mut s = stats.lock().unwrap();
+                    s.other += 0; // no-op, just a place to add error tracking later
                 }
             }
         }
