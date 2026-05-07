@@ -22,7 +22,7 @@ pub fn start_capture(args: Args, tx: Option<mpsc::Sender<analytics::PacketInfo>>
     };
 
     println!("==================================");
-    println!(" Rust Packet Sniffer");
+    println!(" Simplified Wireshark");
     println!("==================================\n");
 
     println!("Interface    : {}", interface);
