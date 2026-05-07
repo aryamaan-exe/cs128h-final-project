@@ -4,8 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
-pcap = "2"
+clap      = { version = "4",    features = ["derive"] }
+pcap      = "2"
 pnet_packet = "0.34"
-chrono = "0.4"
-colored = "2"
+chrono    = "0.4"
+colored   = "2"
+eframe    = "0.29"
+egui      = "0.29"
+egui_plot = "0.29"

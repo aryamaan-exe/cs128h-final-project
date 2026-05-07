@@ -1,5 +1,7 @@
+mod analytics;
 mod capture;
 mod cli;
+mod dashboard;
 mod output;
 mod packet_parser;
 
@@ -9,7 +11,11 @@ use cli::Args;
 fn main() {
     let args = Args::parse();
 
-    if let Err(e) = capture::start_capture(args) {
-        eprintln!("Error: {}", e);
+    if args.gui {
+        dashboard::run(args);
+    } else {
+        if let Err(e) = capture::start_capture(args, None) {
+            eprintln!("Error: {}", e);
+        }
     }
 }

@@ -1,129 +1,189 @@
-use std::io;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::mpsc;
 
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    text::Line,
-    widgets::{Block, Borders, List, ListItem, Paragraph},
-};
+use egui::{Color32, RichText, ScrollArea};
+use egui_plot::{Bar, BarChart, Line, Plot, PlotPoints};
 
-use crate::stats::Stats;
+use crate::analytics::{Analytics, PacketInfo, Protocol};
+use crate::cli::Args;
 
-pub fn run_dashboard(stats: Arc<Mutex<Stats>>) -> Result<(), Box<dyn std::error::Error>> {
-    // --- Terminal setup ---
+pub fn run(args: Args) {
+    let (tx, rx) = mpsc::channel::<PacketInfo>();
+    let args_for_thread = args.clone();
 
-    // Raw mode stops the terminal from buffering keystrokes until Enter.
-    // Without it we wouldn't be able to detect 'q' immediately.
-    enable_raw_mode()?;
-
-    let mut stdout = io::stdout();
-
-    // EnterAlternateScreen switches to a blank overlay buffer. When we exit,
-    // LeaveAlternateScreen restores whatever was in the terminal before we ran.
-    execute!(stdout, EnterAlternateScreen)?;
-
-    // CrosstermBackend tells ratatui how to actually draw to the terminal.
-    // Terminal wraps it and manages the frame-by-frame rendering.
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // --- Main render loop ---
-    loop {
-        // terminal.draw() gives us a `Frame` and calls our closure.
-        // Everything inside the closure is one rendered frame.
-        terminal.draw(|frame| {
-            // Snapshot the stats — lock the mutex, copy what we need, then
-            // release the lock before doing any rendering work.
-            let s = stats.lock().unwrap();
-            let total = s.total;
-            let tcp   = s.tcp;
-            let udp   = s.udp;
-            let arp   = s.arp;
-            let other = s.other;
-
-            // Sort senders by packet count (highest first), keep top 10.
-            // We collect references into a Vec so we can sort them.
-            let mut sender_list: Vec<(&String, &usize)> = s.senders.iter().collect();
-            sender_list.sort_by(|a, b| b.1.cmp(a.1));
-            let top_senders: Vec<String> = sender_list
-                .iter()
-                .take(10)
-                .map(|(ip, count)| format!("{:<20} {:>6} pkts", ip, count))
-                .collect();
-
-            drop(s); // explicitly release the Mutex lock before we start drawing
-
-            // --- Layout ---
-            // Split the whole screen vertically into 4 rows.
-            // Constraint::Length(n) = exactly n rows tall
-            // Constraint::Min(0)    = take up all remaining space
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),  // title bar
-                    Constraint::Length(9),  // protocol stats
-                    Constraint::Min(0),     // top senders (fills the rest)
-                    Constraint::Length(1),  // footer hint
-                ])
-                .split(frame.area());
-
-            // --- Title bar ---
-            let title = Paragraph::new("  Packet Capture Dashboard  —  live")
-                .block(Block::default().borders(Borders::ALL));
-            frame.render_widget(title, rows[0]);
-
-            // --- Stats panel ---
-            // Paragraph::new() accepts a Vec<Line>, where each Line is one row of text.
-            let stats_lines = vec![
-                Line::from(format!("  Total received : {}", total)),
-                Line::from(format!("  TCP            : {}", tcp)),
-                Line::from(format!("  UDP            : {}", udp)),
-                Line::from(format!("  ARP            : {}", arp)),
-                Line::from(format!("  Other          : {}", other)),
-            ];
-            let stats_widget = Paragraph::new(stats_lines)
-                .block(Block::default().borders(Borders::ALL).title(" Protocol Breakdown "));
-            frame.render_widget(stats_widget, rows[1]);
-
-            // --- Top senders panel ---
-            // List::new() takes an iterator of ListItem, one per row.
-            let items: Vec<ListItem> = top_senders
-                .iter()
-                .map(|line| ListItem::new(format!("  {}", line)))
-                .collect();
-            let senders_widget = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(" Top Senders (IP / packets) "));
-            frame.render_widget(senders_widget, rows[2]);
-
-            // --- Footer ---
-            let footer = Paragraph::new("  Press q to quit");
-            frame.render_widget(footer, rows[3]);
-        })?;
-
-        // Poll for a keypress for up to 200 ms, then loop and redraw.
-        // This gives us ~5 redraws per second without busy-waiting.
-        if event::poll(Duration::from_millis(200))? {
-            if let Event::Key(key) = event::read()? {
-                if key.code == KeyCode::Char('q') {
-                    break;
-                }
-            }
+    std::thread::spawn(move || {
+        if let Err(e) = crate::capture::start_capture(args_for_thread, Some(tx)) {
+            eprintln!("Capture error: {}", e);
         }
-    }
+    });
 
-    // --- Cleanup ---
-    // Always restore the terminal, even on quit. If we skip this the user's
-    // shell will be left in raw mode (no echo, broken input) until they restart it.
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("rustsniff")
+            .with_inner_size([1200.0, 800.0]),
+        ..Default::default()
+    };
 
-    Ok(())
+    eframe::run_native(
+        "rustsniff",
+        options,
+        Box::new(|cc| {
+            let mut visuals = egui::Visuals::dark();
+            visuals.panel_fill       = Color32::BLACK;
+            visuals.window_fill      = Color32::BLACK;
+            visuals.extreme_bg_color = Color32::from_gray(6);
+            visuals.faint_bg_color   = Color32::from_gray(10);
+            cc.egui_ctx.set_visuals(visuals);
+            Ok(Box::new(DashboardApp::new(rx)))
+        }),
+    )
+    .unwrap();
 }
+
+#[derive(PartialEq)]
+enum Tab { LiveFeed, Metrics }
+
+pub struct DashboardApp {
+    rx:          mpsc::Receiver<PacketInfo>,
+    analytics:   Analytics,
+    active_tab:  Tab,
+    auto_scroll: bool,
+}
+
+impl DashboardApp {
+    pub fn new(rx: mpsc::Receiver<PacketInfo>) -> Self {
+        DashboardApp { rx, analytics: Analytics::new(), active_tab: Tab::LiveFeed, auto_scroll: true }
+    }
+}
+
+impl eframe::App for DashboardApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        while let Ok(info) = self.rx.try_recv() {
+            self.analytics.add_packet(info);
+        }
+        self.analytics.tick_time_series();
+
+        egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.active_tab, Tab::LiveFeed, "live feed");
+                ui.selectable_value(&mut self.active_tab, Tab::Metrics,  "metrics");
+            });
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            match self.active_tab {
+                Tab::LiveFeed => show_live_feed(ui, &self.analytics, &mut self.auto_scroll),
+                Tab::Metrics  => show_metrics(ui, &self.analytics),
+            }
+        });
+
+        ctx.request_repaint();
+    }
+}
+
+fn show_live_feed(ui: &mut egui::Ui, analytics: &Analytics, auto_scroll: &mut bool) {
+    ui.horizontal(|ui| {
+        ui.checkbox(auto_scroll, "auto-scroll");
+        ui.weak(format!("{} packets", analytics.feed.len()));
+    });
+
+    let row_height = ui.text_style_height(&egui::TextStyle::Body);
+
+    ScrollArea::vertical()
+        .stick_to_bottom(*auto_scroll)
+        .show_rows(ui, row_height, analytics.feed.len(), |ui, range| {
+            for idx in range {
+                let info = &analytics.feed[idx];
+                let (proto_str, color) = match info.protocol {
+                    Protocol::Tcp   => ("TCP",   Color32::from_rgb(80, 200, 80)),
+                    Protocol::Udp   => ("UDP",   Color32::from_rgb(80, 160, 255)),
+                    Protocol::Arp   => ("ARP",   Color32::from_rgb(220, 200, 60)),
+                    Protocol::Other => ("OTHER", Color32::from_rgb(220, 80, 80)),
+                };
+                ui.horizontal(|ui| {
+                    ui.monospace(RichText::new(format!("[{}]", info.time_str)).weak());
+                    ui.colored_label(color, format!("{:<5}", proto_str));
+                    ui.monospace(format!("{:<25}", info.src));
+                    ui.monospace("→");
+                    ui.monospace(format!("{:<25}", info.dst));
+                    ui.weak(format!("#{}", info.number));
+                });
+            }
+        });
+}
+
+fn show_metrics(ui: &mut egui::Ui, analytics: &Analytics) {
+    ui.columns(2, |cols| {
+        let pps_data: Vec<[f64; 2]> = analytics.time_series.iter()
+            .enumerate().map(|(i, b)| [i as f64, b[0]]).collect();
+        cols[0].weak("packets / sec");
+        Plot::new("pps_plot")
+            .height(140.0)
+            .show_x(false).show_y(false)
+            .show(&mut cols[0], |p| {
+                p.line(Line::new(PlotPoints::new(pps_data)).color(Color32::from_rgb(100, 220, 100)));
+            });
+
+        let bps_data: Vec<[f64; 2]> = analytics.time_series.iter()
+            .enumerate().map(|(i, b)| [i as f64, b[1]]).collect();
+        cols[1].weak("bytes / sec");
+        Plot::new("bps_plot")
+            .height(140.0)
+            .show_x(false).show_y(false)
+            .show(&mut cols[1], |p| {
+                p.line(Line::new(PlotPoints::new(bps_data)).color(Color32::from_rgb(100, 180, 255)));
+            });
+    });
+
+    ui.add_space(8.0);
+
+    let bars = vec![
+        Bar::new(0.0, analytics.tcp_count   as f64).name("TCP")  .fill(Color32::from_rgb(80, 200, 80)),
+        Bar::new(1.0, analytics.udp_count   as f64).name("UDP")  .fill(Color32::from_rgb(80, 160, 255)),
+        Bar::new(2.0, analytics.arp_count   as f64).name("ARP")  .fill(Color32::from_rgb(220, 200, 60)),
+        Bar::new(3.0, analytics.other_count as f64).name("Other").fill(Color32::from_rgb(220, 80, 80)),
+    ];
+    ui.weak("protocol breakdown");
+    Plot::new("proto_chart")
+        .height(140.0)
+        .show_x(false).show_y(false)
+        .show(ui, |p| { p.bar_chart(BarChart::new(bars)); });
+    ui.horizontal(|ui| {
+        ui.colored_label(Color32::from_rgb(80, 200, 80),  "TCP");
+        ui.colored_label(Color32::from_rgb(80, 160, 255), "UDP");
+        ui.colored_label(Color32::from_rgb(220, 200, 60), "ARP");
+        ui.colored_label(Color32::from_rgb(220, 80, 80),  "Other");
+    });
+
+    ui.add_space(8.0);
+    ui.weak("top talkers");
+
+    let mut sorted: Vec<(&String, &(u64, u64))> = analytics.top_talkers.iter().collect();
+    sorted.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+    sorted.truncate(20);
+
+    egui::Grid::new("top_talkers")
+        .striped(true)
+        .num_columns(3)
+        .min_col_width(160.0)
+        .show(ui, |ui| {
+            ui.weak("source ip");
+            ui.weak("packets");
+            ui.weak("bytes");
+            ui.end_row();
+            for (ip, (pkts, bytes)) in &sorted {
+                ui.monospace(ip.as_str());
+                ui.monospace(pkts.to_string());
+                let b = *bytes;
+                let size_str = if b < 1024 {
+                    format!("{} B", b)
+                } else if b < 1024 * 1024 {
+                    format!("{:.1} KB", b as f64 / 1024.0)
+                } else {
+                    format!("{:.1} MB", b as f64 / (1024.0 * 1024.0))
+                };
+                ui.monospace(size_str);
+                ui.end_row();
+            }
+        });
+}
+

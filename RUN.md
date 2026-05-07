@@ -1,6 +1,7 @@
-# Simplified Wireshark
+# Rust Packet Sniffer
 
-A live packet capture dashboard built with `pcap`, `clap`, and `ratatui`.
+A packet capture tool with both a terminal output mode and a live GUI dashboard.
+Built with `pcap`, `clap`, `ratatui`, and `egui` (`eframe`).
 
 ## Prerequisites
 
@@ -23,37 +24,49 @@ List available interfaces:
 sudo cargo run -- --list
 ```
 
-Launch the dashboard (use `lo0` on macOS, `lo` on Linux):
+### Terminal mode (original)
+
+Prints formatted, colored packet output to the terminal:
 
 ```bash
-sudo cargo run -- -i lo0
+sudo cargo run -- -i en0
+sudo cargo run -- -i en0 -c 50
+sudo cargo run -- -i en0 -f "tcp port 443"
 ```
 
-The dashboard updates live and shows:
-- Total packets received
-- Protocol breakdown (TCP / UDP / ARP / Other)
-- Top senders by packet count
+### GUI mode
 
-Press **q** to quit.
+Opens a native window with a live dashboard:
+
+```bash
+sudo cargo run -- -i en0 --gui
+```
+
+Terminal output still appears in the terminal while the window is open.
+Close the window to stop the GUI; the capture thread exits automatically.
+
+The dashboard has two tabs:
+
+- **Live Feed** — scrolling packet log with timestamp, protocol, source→dest.
+  Uncheck *Auto-scroll* to pause scrolling and read older entries.
+- **Metrics** — packets/sec and bytes/sec line graphs (rolling 60 s window),
+  protocol breakdown bar chart, and a top-talkers table (sorted by packet count).
 
 ### Optional flags
 
-| Flag | Short | Description | Default |
-|---|---|---|---|
-| `--interface` | `-i` | Network interface to capture on | (required) |
-| `--count` | `-c` | Stop after N packets | 10,000,000 |
-| `--filter` | `-f` | BPF filter expression | (none) |
+| Flag          | Short | Description                          | Default |
+|---------------|-------|--------------------------------------|---------|
+| `--interface` | `-i`  | Network interface to capture on      | (required) |
+| `--count`     | `-c`  | Stop after N packets                 | 100 |
+| `--filter`    | `-f`  | BPF filter expression                | (none) |
+| `--gui`       |       | Open the GUI dashboard               | off |
+| `--list`      |       | List available interfaces and exit   | — |
 
 ### Filter examples
 
 ```bash
-# Only TCP traffic
 sudo cargo run -- -i en0 -f "tcp"
-
-# Only traffic to/from a specific host
 sudo cargo run -- -i en0 -f "host 8.8.8.8"
-
-# Only traffic on port 443 (HTTPS)
 sudo cargo run -- -i en0 -f "tcp port 443"
 ```
 
@@ -63,4 +76,5 @@ sudo cargo run -- -i en0 -f "tcp port 443"
 ping -c 5 127.0.0.1
 ```
 
-On Windows, run the terminal as Administrator instead of using `sudo`, and use `cargo run -- --list` to find your interface name.
+On Windows, run as Administrator instead of using `sudo`, and use
+`cargo run -- --list` to find your interface name.

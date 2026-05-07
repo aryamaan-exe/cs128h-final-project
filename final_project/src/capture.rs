@@ -1,9 +1,12 @@
+use std::sync::mpsc;
+
+use crate::analytics;
 use crate::cli::Args;
 use crate::packet_parser;
 
 use pcap::{Capture, Device};
 
-pub fn start_capture(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_capture(args: Args, tx: Option<mpsc::Sender<analytics::PacketInfo>>) -> Result<(), Box<dyn std::error::Error>> {
     if args.list {
         list_interfaces()?;
         return Ok(());
@@ -49,7 +52,15 @@ pub fn start_capture(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         match capture.next_packet() {
             Ok(packet) => {
                 packets_received += 1;
-                packet_parser::handle_packet(packets_received, packet.data);
+
+                if let Some(ref sender) = tx {
+                    let info = analytics::parse_packet(packet.data, packets_received);
+                    if sender.send(info).is_err() {
+                        break;
+                    }
+                } else {
+                    packet_parser::handle_packet(packets_received, packet.data);
+                }
             }
 
             Err(pcap::Error::TimeoutExpired) => {}
