@@ -19,7 +19,7 @@ pub fn start_capture(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("==================================");
-    println!(" Rust Packet Sniffer");
+    println!(" Simplified Wireshark");
     println!("==================================\n");
 
     println!("Interface    : {}", interface);
